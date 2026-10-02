@@ -1,0 +1,56 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="referrer" content="no-referrer">
+<title>:P</title>
+<p>:P</p>
+<script>
+(function () {
+    "use strict";
+    var KEY = "deadlock.purple-upgrades.v2.state";
+    var BACKUP = KEY + ".previous";
+    var PREFIX = "PAUCOLOR1:";
+    var sequence = 0;
+    function valid(record) {
+        return record && record.schema === 1 && typeof record.color === "string" &&
+            /^#[0-9A-F]{6}$/.test(record.color) && typeof record.revision === "number" &&
+            isFinite(record.revision) && record.revision > 0 &&
+            record.revision <= 9007199254740000 && Math.floor(record.revision) === record.revision;
+    }
+    function reply(request, fields) {
+        fields.id = request.id; fields.op = request.op; fields.sequence = ++sequence;
+        document.title = PREFIX + JSON.stringify(fields);
+    }
+    function handle() {
+        var request;
+        try {
+            if (location.hash.length > 2048) return;
+            request = JSON.parse(decodeURIComponent(location.hash.slice(1)));
+            if (!request || typeof request.id !== "string" || request.id.length > 80) return;
+            if (request.op === "hello") {
+                reply(request, {ok: true, version: 1, href: location.href.split("#")[0]});
+            } else if (request.op === "read") {
+                var current = localStorage.getItem(KEY), previous = localStorage.getItem(BACKUP);
+                if ((current && current.length > 256) || (previous && previous.length > 256)) throw new Error("record_size");
+                reply(request, {ok: true, current: current, previous: previous});
+            } else if (request.op === "write") {
+                if (!valid(request.record) || !(request.expected === null || typeof request.expected === "string")) throw new Error("invalid_record");
+                var record = JSON.stringify({schema: 1, color: request.record.color, revision: request.record.revision});
+                var old = localStorage.getItem(KEY);
+                if (old !== request.expected && old !== record) throw new Error("conflict");
+                if (old !== null && old !== record) {
+                    var parsed = null;
+                    try { parsed = JSON.parse(old); } catch (_) {}
+                    if (valid(parsed)) localStorage.setItem(BACKUP, old);
+                }
+                localStorage.setItem(KEY, record);
+                if (localStorage.getItem(KEY) !== record) throw new Error("verification_failed");
+                reply(request, {ok: true, current: record});
+            }
+        } catch (error) {
+            if (request && typeof request.id === "string") reply(request, {ok: false, error: String(error).slice(0, 160)});
+        }
+    }
+    window.addEventListener("hashchange", handle);
+    handle();
+})();
+</script>
